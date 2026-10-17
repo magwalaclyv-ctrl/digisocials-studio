@@ -1,0 +1,5 @@
+<div class="text-sm text-red-700">
+  We couldn't authorize you for this org. Your role may have changed since
+  you started checkout. Please contact your org admin or
+  {% if SUPPORT_EMAIL %}<a href="mailto:{{ SUPPORT_EMAIL }}" class="text-violet-600 hover:text-violet-700">{{ SUPPORT_EMAIL }}</a>{% else %}your administrator{% endif %}.
+</div>

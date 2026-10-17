@@ -1,0 +1,35 @@
+{% if request.workspace %}
+{% url "composer:create_landing" workspace_id=request.workspace.id as create_post_url %}
+{% elif sidebar_workspaces %}
+{% url "composer:create_landing" workspace_id=sidebar_workspaces.0.id as create_post_url %}
+{% endif %}
+<div class="sidebar-review-banner px-3 pb-3"
+     x-data="{
+         open: true,
+         dismiss() {
+             this.open = false;
+             var tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+             fetch('{% url 'accounts:dismiss_review_banner' %}', {
+                 method: 'POST',
+                 headers: { 'X-CSRFToken': tokenInput ? tokenInput.value : '' },
+                 keepalive: true,
+             });
+         },
+     }"
+     x-show="open && !sidebarCollapsed">
+    <div class="relative rounded-xl border border-violet-100 bg-violet-50 p-3.5">
+        <button type="button" @click="dismiss()"
+                class="absolute top-2.5 right-2.5 flex h-6 w-6 items-center justify-center rounded-md text-stone-400 hover:bg-white hover:text-stone-600"
+                aria-label="Dismiss" title="Dismiss">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <p class="text-sm font-semibold text-stone-900">Plan your next post</p>
+        <p class="mt-1 text-xs leading-relaxed text-stone-600">Draft and schedule content for your connected channels.</p>
+        {% if create_post_url %}
+        <a href="{{ create_post_url }}" @click="dismiss()"
+           class="mt-3 flex w-full items-center justify-center rounded-full bg-violet-600 px-3 py-1.5 text-[0.8125rem] font-semibold text-white hover:bg-violet-700">
+            Create a post
+        </a>
+        {% endif %}
+    </div>
+</div>
