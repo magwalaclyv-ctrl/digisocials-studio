@@ -232,8 +232,9 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         Upload
       </button>
-      <input type="file" x-ref="fileInput" @change="handleFiles($event.target.files)" multiple
+      <input type="file" x-ref="fileInput" @change="handleFiles($event.target.files); $event.target.value = ''" multiple
              accept="{{ accepted_file_types }}" class="hidden">
+      <div class="hidden">{% csrf_token %}</div>
     </div>
 
     <!-- ── Upload Dropzone / Progress ── -->
@@ -382,19 +383,28 @@ function mediaLibrary() {
 
         xhr.addEventListener('load', () => {
           completed++;
-          if (xhr.status >= 200 && xhr.status < 300) {
+          let payload = {};
+          try {
+            payload = JSON.parse(xhr.responseText || '{}');
+          } catch (error) {
+            payload = {};
+          }
+          const result = payload.results && payload.results[0];
+          if (xhr.status >= 200 && xhr.status < 300 && result && result.status === 'ok') {
             this.uploadQueue[index].status = 'complete';
             this.uploadQueue[index].progress = 100;
           } else {
             this.uploadQueue[index].status = 'error';
-            this.uploadQueue[index].error = 'Upload failed';
+            this.uploadQueue[index].error = (result && result.errors && result.errors.join(' '))
+              || payload.error
+              || 'Upload failed. Check the file type and try again.';
           }
           if (completed === total) {
             setTimeout(() => {
               this.uploading = false;
               this.uploadQueue = [];
               htmx.trigger('#asset-grid', 'uploadsComplete');
-            }, 800);
+            }, 2000);
           }
         });
 
@@ -406,7 +416,7 @@ function mediaLibrary() {
             setTimeout(() => {
               this.uploading = false;
               htmx.trigger('#asset-grid', 'uploadsComplete');
-            }, 800);
+            }, 2000);
           }
         });
 

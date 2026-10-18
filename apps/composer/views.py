@@ -31,6 +31,7 @@ from apps.common.validators import (
     safe_xml_fromstring,
 )
 from apps.media_library.models import MediaAsset
+from apps.media_library.quotas import StorageQuotaExceededError
 from apps.members.decorators import require_permission
 from apps.members.models import WorkspaceMembership
 from apps.social_accounts.models import SocialAccount
@@ -38,6 +39,7 @@ from apps.workspaces.models import Workspace
 from providers import is_video_only, requires_media
 from providers.tiktok import VALID_PRIVACY_LEVELS as TIKTOK_PRIVACY_LEVELS
 
+from .ai_ideas import IdeaProviderError, generate_ideas
 from .forms import ContentCategoryForm, PostForm
 from .models import (
     ContentCategory,
@@ -68,6 +70,38 @@ MAX_CSV_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB cap on CSV planner imports
 
 # Shown when every posting slot within the lookahead horizon is already taken.
 _QUEUE_FULL_MSG = "No open posting slot within the scheduling horizon — add posting slots or free one up."
+
+STUDIO_FORMATS = {
+    "instagram-square": {"label": "Instagram feed · Square", "category": "Post", "width": 1080, "height": 1080},
+    "instagram-portrait": {"label": "Instagram feed · Portrait", "category": "Post", "width": 1080, "height": 1350},
+    "instagram-landscape": {"label": "Instagram feed · Landscape", "category": "Post", "width": 1080, "height": 566},
+    "instagram-story": {"label": "Instagram Story / Reel", "category": "Story / Reel", "width": 1080, "height": 1920},
+    "facebook-square": {"label": "Facebook feed · Square", "category": "Post", "width": 1080, "height": 1080},
+    "facebook-landscape": {"label": "Facebook feed · Landscape", "category": "Post", "width": 1200, "height": 630},
+    "facebook-story": {"label": "Facebook Story", "category": "Story", "width": 1080, "height": 1920},
+    "facebook-landscape-ad": {
+        "label": "Facebook / Instagram · Landscape ad",
+        "category": "Ad",
+        "width": 1200,
+        "height": 628,
+    },
+    "facebook-square-ad": {
+        "label": "Facebook / Instagram · Square ad",
+        "category": "Ad",
+        "width": 1080,
+        "height": 1080,
+    },
+    "linkedin-square": {"label": "LinkedIn · Square post", "category": "Post", "width": 1200, "height": 1200},
+    "linkedin-landscape": {"label": "LinkedIn · Landscape post", "category": "Post", "width": 1200, "height": 627},
+    "threads-portrait": {"label": "Threads · Portrait post", "category": "Post", "width": 1080, "height": 1350},
+    "tiktok-video": {"label": "TikTok · Video / cover", "category": "Video / cover", "width": 1080, "height": 1920},
+    "pinterest-pin": {"label": "Pinterest · Standard Pin", "category": "Pin", "width": 1000, "height": 1500},
+    "pinterest-square": {"label": "Pinterest · Square Pin", "category": "Pin", "width": 1000, "height": 1000},
+    "youtube-community": {"label": "YouTube · Community post", "category": "Post", "width": 1080, "height": 1080},
+    "youtube-thumbnail": {"label": "YouTube · Thumbnail", "category": "Video thumbnail", "width": 1280, "height": 720},
+    "youtube-shorts-cover": {"label": "YouTube · Shorts cover", "category": "Shorts cover", "width": 1080, "height": 1920},
+    "x-landscape": {"label": "X · Landscape card", "category": "Post", "width": 1600, "height": 900},
+}
 
 
 def _get_workspace(request, workspace_id):
@@ -648,6 +682,20 @@ def compose(request, workspace_id, post_id=None):
     session_key = f"pending_media_{workspace.id}"
     request.session.pop(session_key, None)
     pending_assets = MediaAsset.objects.none()
+    # Templates created in Studio can reference workspace or organization-shared
+    # media. Seed the normal composer upload flow with those permitted assets.
+    if not post_id and template_data:
+        template_media_ids = [
+            media_id for media_id in (template_data.get("media_asset_ids") or []) if _is_valid_uuid(media_id)
+        ]
+        if template_media_ids:
+            pending_assets = MediaAsset.objects.for_workspace_with_shared(
+                workspace.id,
+                workspace.organization_id,
+            ).filter(id__in=template_media_ids)
+            valid_media_ids = list(pending_assets.values_list("id", flat=True))
+            if valid_media_ids:
+                request.session[session_key] = [str(media_id) for media_id in valid_media_ids]
 
     # Connected social accounts for this workspace
     social_accounts = (
@@ -1581,6 +1629,7 @@ def thumbnail_picker(request, workspace_id):
 
 
 @login_required
+@require_permission("create_posts")
 @require_POST
 def thumbnail_upload(request, workspace_id):
     """Upload an image from the local machine to the media library and return
@@ -1594,23 +1643,20 @@ def thumbnail_upload(request, workspace_id):
     if not uploaded_file:
         return JsonResponse({"error": "No file provided"}, status=400)
 
-    content_type = uploaded_file.content_type or ""
-    if not content_type.startswith("image/"):
-        return JsonResponse({"error": "Only image files are allowed"}, status=400)
-
-    from apps.media_library.models import MediaAsset
-
-    asset = MediaAsset.objects.create(
-        organization=workspace.organization,
-        workspace=workspace,
-        uploaded_by=request.user,
-        file=uploaded_file,
-        filename=uploaded_file.name,
-        media_type=MediaAsset.MediaType.IMAGE,
-        mime_type=content_type,
-        file_size=uploaded_file.size,
-        source="upload",
-    )
+    try:
+        asset = _create_workspace_media_asset(
+            workspace,
+            request.user,
+            uploaded_file,
+            allowed_file_types={"image", "gif"},
+        )
+    except ValidationError as exc:
+        return JsonResponse({"error": " ".join(exc.messages)}, status=400)
+    except StorageQuotaExceededError:
+        return JsonResponse(
+            {"error": "Organization media storage is full. Remove unused media or contact your administrator."},
+            status=413,
+        )
 
     url = ""
     if asset.thumbnail:
@@ -2326,6 +2372,7 @@ def _attach_asset_for_composer(request, workspace, asset, post=None):
 
 
 @login_required
+@require_permission("create_posts")
 @require_POST
 def upload_media(request, workspace_id, post_id=None):
     """Upload a file directly from the composer and optionally attach to a post."""
@@ -2335,33 +2382,24 @@ def upload_media(request, workspace_id, post_id=None):
     if not uploaded_file:
         return JsonResponse({"error": "No file provided"}, status=400)
 
-    from apps.media_library.models import MediaAsset
+    post = get_object_or_404(Post, id=post_id, workspace=workspace) if post_id else None
+    try:
+        asset = _create_workspace_media_asset(
+            workspace,
+            request.user,
+            uploaded_file,
+            allowed_file_types={"image", "gif", "video"},
+        )
+    except ValidationError as exc:
+        return HttpResponse(" ".join(exc.messages), status=400, content_type="text/plain")
+    except StorageQuotaExceededError:
+        return HttpResponse(
+            "Organization media storage is full. Remove unused media or contact your administrator.",
+            status=413,
+            content_type="text/plain",
+        )
 
-    # Determine media type
-    content_type = uploaded_file.content_type or ""
-    if content_type.startswith("image/"):
-        media_type = MediaAsset.MediaType.IMAGE
-    elif content_type.startswith("video/"):
-        media_type = MediaAsset.MediaType.VIDEO
-    elif content_type == "image/gif":
-        media_type = MediaAsset.MediaType.GIF
-    else:
-        media_type = MediaAsset.MediaType.DOCUMENT
-
-    asset = MediaAsset.objects.create(
-        organization=workspace.organization,
-        workspace=workspace,
-        uploaded_by=request.user,
-        file=uploaded_file,
-        filename=uploaded_file.name,
-        media_type=media_type,
-        mime_type=content_type,
-        file_size=uploaded_file.size,
-        source="upload",
-    )
-
-    if post_id:
-        post = get_object_or_404(Post, id=post_id, workspace=workspace)
+    if post:
         attachment = _attach_asset_for_composer(request, workspace, asset, post)
         # Option A: changing media on an approved post sends it back for re-approval.
         _revert_approved_to_review(post)
@@ -2772,31 +2810,42 @@ def _sync_idea_media_attachments(idea, workspace, ordered_asset_ids):
         idea.save(update_fields=["media_asset", "updated_at"])
 
 
-def _create_idea_media_asset(workspace, user, uploaded_file):
-    """Create a MediaAsset from an uploaded file for Idea create/edit flows."""
-    from apps.media_library.models import MediaAsset
+def _create_workspace_media_asset(workspace, user, uploaded_file, *, allowed_file_types=None):
+    """Validate, store, and process an upload owned by the current workspace."""
+    from apps.media_library.services import create_asset
+    from apps.media_library.tasks import process_media_asset
+    from apps.media_library.validators import validate_file
 
-    content_type = uploaded_file.content_type or ""
-    if content_type == "image/gif":
-        media_type = MediaAsset.MediaType.GIF
-    elif content_type.startswith("image/"):
-        media_type = MediaAsset.MediaType.IMAGE
-    elif content_type.startswith("video/"):
-        media_type = MediaAsset.MediaType.VIDEO
-    else:
-        media_type = MediaAsset.MediaType.DOCUMENT
+    file_type, errors = validate_file(uploaded_file)
+    if errors:
+        raise ValidationError(errors)
+    if allowed_file_types is not None and file_type not in allowed_file_types:
+        raise ValidationError("This upload type is not supported here.")
 
-    return MediaAsset.objects.create(
+    asset = create_asset(
         organization=workspace.organization,
         workspace=workspace,
-        uploaded_by=user,
         file=uploaded_file,
-        filename=uploaded_file.name,
-        media_type=media_type,
-        mime_type=content_type,
-        file_size=uploaded_file.size,
-        source="upload",
+        uploaded_by=user,
     )
+    asset.source = "upload"
+    asset.save(update_fields=["source"])
+    process_media_asset(str(asset.id))
+    return asset
+
+
+def _idea_media_upload_error(request, exc, *, json_response=False):
+    """Return a useful client error for an idea image upload failure."""
+    if isinstance(exc, StorageQuotaExceededError):
+        error_text = "Organization media storage is full. Remove unused media or contact your administrator."
+        status = 413
+    else:
+        error_text = " ".join(exc.messages if hasattr(exc, "messages") else [str(exc)])
+        status = 400
+
+    if json_response or _wants_json_response(request):
+        return JsonResponse({"error": error_text}, status=status)
+    return HttpResponse(error_text, status=status)
 
 
 @login_required
@@ -2811,6 +2860,8 @@ def create_landing(request, workspace_id):
 
     workspace = _get_workspace(request, workspace_id)
     tab = request.GET.get("tab", "ideas")
+    if tab not in {"ideas", "templates", "feeds", "ai"}:
+        tab = "ideas"
     tag = request.GET.get("tag")
 
     columns, all_tags = _idea_columns(workspace, tag)
@@ -2834,6 +2885,31 @@ def create_landing(request, workspace_id):
 @login_required
 @require_permission("create_posts")
 @require_POST
+def idea_generate(request, workspace_id):
+    """Generate post ideas with an optional provider or local prompt starters."""
+    workspace = _get_workspace(request, workspace_id)
+    topic = request.POST.get("topic", "").strip()[:200]
+    audience = request.POST.get("audience", "").strip()[:200]
+    platform = request.POST.get("platform", "").strip()[:80]
+    if not topic:
+        return JsonResponse({"error": "Add a topic to get started."}, status=400)
+
+    try:
+        ideas, source = generate_ideas(topic=topic, audience=audience, platform=platform)
+    except IdeaProviderError as exc:
+        return JsonResponse({"error": str(exc)}, status=502)
+    return JsonResponse(
+        {
+            "ideas": ideas,
+            "source": source,
+            "workspace": str(workspace.id),
+        }
+    )
+
+
+@login_required
+@require_permission("create_posts")
+@require_POST
 def idea_upload_media(request, workspace_id):
     """Upload media for Idea modals and return an asset id for reliable save binding."""
     workspace = _get_workspace(request, workspace_id)
@@ -2841,7 +2917,15 @@ def idea_upload_media(request, workspace_id):
     if not uploaded_file:
         return JsonResponse({"error": "No file provided"}, status=400)
 
-    asset = _create_idea_media_asset(workspace, request.user, uploaded_file)
+    try:
+        asset = _create_workspace_media_asset(
+            workspace,
+            request.user,
+            uploaded_file,
+            allowed_file_types={"image", "gif", "video"},
+        )
+    except (ValidationError, StorageQuotaExceededError) as exc:
+        return _idea_media_upload_error(request, exc, json_response=True)
     return JsonResponse(
         {
             "asset_id": str(asset.id),
@@ -2881,7 +2965,15 @@ def idea_create(request, workspace_id):
     uploaded_file = request.FILES.get("media") or request.FILES.get("file")
     media_asset_id = request.POST.get("media_asset_id", "").strip()
     if uploaded_file:
-        uploaded_asset = _create_idea_media_asset(workspace, request.user, uploaded_file)
+        try:
+            uploaded_asset = _create_workspace_media_asset(
+                workspace,
+                request.user,
+                uploaded_file,
+                allowed_file_types={"image", "gif", "video"},
+            )
+        except (ValidationError, StorageQuotaExceededError) as exc:
+            return _idea_media_upload_error(request, exc)
         media_asset_ids.append(str(uploaded_asset.id))
     elif not media_asset_ids and media_asset_id:
         from apps.media_library.models import MediaAsset
@@ -2960,7 +3052,15 @@ def idea_edit(request, workspace_id, idea_id):
     uploaded_file = request.FILES.get("media") or request.FILES.get("file")
     uploaded_asset = None
     if uploaded_file:
-        uploaded_asset = _create_idea_media_asset(workspace, request.user, uploaded_file)
+        try:
+            uploaded_asset = _create_workspace_media_asset(
+                workspace,
+                request.user,
+                uploaded_file,
+                allowed_file_types={"image", "gif", "video"},
+            )
+        except (ValidationError, StorageQuotaExceededError) as exc:
+            return _idea_media_upload_error(request, exc)
         media_asset_ids.append(str(uploaded_asset.id))
     media_asset_ids = _normalize_media_asset_ids(media_asset_ids)
 
@@ -3328,6 +3428,139 @@ def category_delete(request, workspace_id, category_id):
 # ---------------------------------------------------------------------------
 # Post Templates
 # ---------------------------------------------------------------------------
+
+
+@login_required
+@require_permission("create_posts")
+def studio_template(request, workspace_id, template_id=None):
+    """Create or edit a reusable Studio design preset for this workspace."""
+    workspace = _get_workspace(request, workspace_id)
+    template = None
+    studio_data = {}
+    if template_id:
+        template = get_object_or_404(PostTemplate, id=template_id, workspace=workspace)
+        studio_data = (template.template_data or {}).get("studio", {})
+
+    form_values = {
+        "name": template.name if template else "",
+        "description": template.description if template else "",
+        "format": studio_data.get("format", "instagram-square"),
+        "headline": studio_data.get("headline", ""),
+        "body": studio_data.get("body", ""),
+        "cta": studio_data.get("cta", ""),
+        "background_color": studio_data.get("background_color", "#6d28d9"),
+        "text_color": studio_data.get("text_color", "#ffffff"),
+        "media_asset_id": studio_data.get("media_asset_id", ""),
+    }
+    formats = [{"key": key, **value} for key, value in STUDIO_FORMATS.items()]
+    gallery_assets = (
+        MediaAsset.objects.for_workspace_with_shared(workspace.id, workspace.organization_id)
+        .filter(media_type__in=[MediaAsset.MediaType.IMAGE, MediaAsset.MediaType.GIF])
+        .order_by("-created_at")[:100]
+    )
+    errors = {}
+
+    if request.method == "POST":
+        name = request.POST.get("name", "").strip()
+        description = request.POST.get("description", "").strip()
+        format_key = request.POST.get("format", "")
+        headline = request.POST.get("headline", "").strip()
+        body = request.POST.get("body", "").strip()
+        cta = request.POST.get("cta", "").strip()
+        background_color = request.POST.get("background_color", "#6d28d9").strip()
+        text_color = request.POST.get("text_color", "#ffffff").strip()
+        media_asset_id = request.POST.get("media_asset_id", "").strip()
+        form_values = {
+            "name": name,
+            "description": description,
+            "format": format_key,
+            "headline": headline,
+            "body": body,
+            "cta": cta,
+            "background_color": background_color,
+            "text_color": text_color,
+            "media_asset_id": media_asset_id,
+        }
+
+        if not name:
+            errors["name"] = "Give this template a name."
+        elif len(name) > 200:
+            errors["name"] = "Template names must be 200 characters or fewer."
+        if format_key not in STUDIO_FORMATS:
+            errors["format"] = "Choose a supported format."
+        if len(headline) > 160:
+            errors["headline"] = "Headlines must be 160 characters or fewer."
+        if len(body) > 1200:
+            errors["body"] = "Body text must be 1,200 characters or fewer."
+        if len(cta) > 80:
+            errors["cta"] = "Call-to-action text must be 80 characters or fewer."
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", background_color):
+            errors["background_color"] = "Choose a valid background color."
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", text_color):
+            errors["text_color"] = "Choose a valid text color."
+
+        selected_asset = None
+        if media_asset_id:
+            if _is_valid_uuid(media_asset_id):
+                selected_asset = (
+                    MediaAsset.objects.for_workspace_with_shared(workspace.id, workspace.organization_id)
+                    .filter(
+                        id=media_asset_id,
+                        media_type__in=[MediaAsset.MediaType.IMAGE, MediaAsset.MediaType.GIF],
+                    )
+                    .first()
+                )
+            if not selected_asset:
+                errors["media_asset_id"] = "Choose an image from this workspace's gallery."
+
+        if not errors:
+            preset = STUDIO_FORMATS[format_key]
+            data = {
+                "caption": body,
+                "media_asset_ids": [str(selected_asset.id)] if selected_asset else [],
+                "studio": {
+                    "format": format_key,
+                    "format_label": preset["label"],
+                    "category": preset["category"],
+                    "width": preset["width"],
+                    "height": preset["height"],
+                    "headline": headline,
+                    "body": body,
+                    "cta": cta,
+                    "background_color": background_color.lower(),
+                    "text_color": text_color.lower(),
+                    "media_asset_id": str(selected_asset.id) if selected_asset else "",
+                },
+            }
+            if template:
+                template.name = name
+                template.description = description
+                template.template_data = data
+                template.save(update_fields=["name", "description", "template_data", "updated_at"])
+            else:
+                template = PostTemplate.objects.create(
+                    workspace=workspace,
+                    name=name,
+                    description=description,
+                    template_data=data,
+                    created_by=request.user,
+                )
+            return redirect("composer:template_list", workspace_id=workspace.id)
+
+    return render(
+        request,
+        "composer/studio_editor.html",
+        {
+            "workspace": workspace,
+            "template": template,
+            "studio_data": studio_data,
+            "form_values": form_values,
+            "formats": formats,
+            "gallery_assets": gallery_assets,
+            "errors": errors,
+        },
+        status=400 if errors else 200,
+    )
 
 
 @login_required

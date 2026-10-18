@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}{% if template %}Edit{% else %}Design{% endif %} template - {{ workspace.name }} - DigiSocials{% endblock %}
+
+{% block page_header %}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-semibold text-stone-900">{% if template %}Edit template{% else %}Studio{% endif %}</h1>
+        <p class="text-sm text-stone-500 mt-1">Design reusable post, story, reel and ad layouts in common network sizes.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <a href="{% url 'media_library:index' workspace_id=workspace.id %}"
+           class="px-4 py-2 rounded-lg border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50">
+            Open media gallery
+        </a>
+        <a href="{% url 'composer:template_list' workspace_id=workspace.id %}"
+           class="px-4 py-2 rounded-lg border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50">
+            Back to templates
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- OPERATE CONTRACT: A workspace-owned design editor puts format and editable copy beside a live preview. The existing DigiSocials shell remains authoritative; presets, gallery selection, and Save stay discoverable on small screens. -->
+<div x-data="studioEditor()" class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(300px,0.8fr)] gap-6 items-start">
+    <form method="post" class="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 space-y-5">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+                <label for="template-name" class="block text-sm font-semibold text-stone-700 mb-1.5">Template name</label>
+                <input id="template-name" name="name" required maxlength="200" value="{{ form_values.name }}"
+                       class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none">
+                {% if errors.name %}<p class="mt-1 text-xs text-red-600">{{ errors.name }}</p>{% endif %}
+            </div>
+            <div class="sm:col-span-2">
+                <label for="template-description" class="block text-sm font-semibold text-stone-700 mb-1.5">Description <span class="font-normal text-stone-400">optional</span></label>
+                <input id="template-description" name="description" value="{{ form_values.description }}"
+                       class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none"
+                       placeholder="What is this layout for?">
+            </div>
+            <div class="sm:col-span-2">
+                <label for="studio-format" class="block text-sm font-semibold text-stone-700 mb-1.5">Network format</label>
+                <select id="studio-format" name="format" x-ref="formatSelect" x-model="format"
+                        class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none">
+                    {% for preset in formats %}
+                    <option value="{{ preset.key }}" data-width="{{ preset.width }}" data-height="{{ preset.height }}"
+                            {% if form_values.format == preset.key %}selected{% endif %}>
+                        {{ preset.label }} · {{ preset.width }} × {{ preset.height }} px
+                    </option>
+                    {% endfor %}
+                </select>
+                {% if errors.format %}<p class="mt-1 text-xs text-red-600">{{ errors.format }}</p>{% endif %}
+                <p class="mt-1.5 text-xs text-stone-500">Common presets to start from; check each network's current specs before publishing paid ads.</p>
+            </div>
+            <div class="sm:col-span-2">
+                <label for="studio-image" class="block text-sm font-semibold text-stone-700 mb-1.5">Background image <span class="font-normal text-stone-400">optional</span></label>
+                <select id="studio-image" name="media_asset_id" x-ref="assetSelect"
+                        @change="selectedImageUrl = $event.target.selectedOptions[0]?.dataset.url || ''"
+                        class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none">
+                    <option value="">No image — use the background color</option>
+                    {% for asset in gallery_assets %}
+                    <option value="{{ asset.id }}" data-url="{{ asset.file.url }}"
+                            {% if form_values.media_asset_id == asset.id|stringformat:"s" %}selected{% endif %}>
+                        {{ asset.filename }}{% if asset.width and asset.height %} · {{ asset.width }} × {{ asset.height }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                {% if errors.media_asset_id %}<p class="mt-1 text-xs text-red-600">{{ errors.media_asset_id }}</p>{% endif %}
+                <p class="mt-1.5 text-xs text-stone-500">
+                    Upload local images in the <a class="text-violet-700 underline" href="{% url 'media_library:index' workspace_id=workspace.id %}">media gallery</a>, then choose one here.
+                    {% if not gallery_assets %}No images yet.{% endif %}
+                </p>
+            </div>
+            <div>
+                <label for="studio-headline" class="block text-sm font-semibold text-stone-700 mb-1.5">Headline</label>
+                <input id="studio-headline" name="headline" maxlength="160" x-ref="headlineInput"
+                       value="{{ form_values.headline }}" x-model="headline"
+                       class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none"
+                       placeholder="A clear, memorable headline">
+                {% if errors.headline %}<p class="mt-1 text-xs text-red-600">{{ errors.headline }}</p>{% endif %}
+            </div>
+            <div>
+                <label for="studio-cta" class="block text-sm font-semibold text-stone-700 mb-1.5">Call to action</label>
+                <input id="studio-cta" name="cta" maxlength="80" x-ref="ctaInput"
+                       value="{{ form_values.cta }}" x-model="cta"
+                       class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none"
+                       placeholder="Learn more">
+                {% if errors.cta %}<p class="mt-1 text-xs text-red-600">{{ errors.cta }}</p>{% endif %}
+            </div>
+            <div class="sm:col-span-2">
+                <label for="studio-body" class="block text-sm font-semibold text-stone-700 mb-1.5">Supporting copy</label>
+                <textarea id="studio-body" name="body" maxlength="1200" rows="4" x-ref="bodyInput" x-model="body"
+                          class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm focus:border-violet-500 focus:ring-2 focus:ring-violet-100 outline-none"
+                          placeholder="Add a short supporting message">{{ form_values.body }}</textarea>
+                {% if errors.body %}<p class="mt-1 text-xs text-red-600">{{ errors.body }}</p>{% endif %}
+            </div>
+            <div>
+                <label for="studio-background" class="block text-sm font-semibold text-stone-700 mb-1.5">Background color</label>
+                <input id="studio-background" type="color" name="background_color" x-ref="backgroundInput" x-model="backgroundColor"
+                       value="{{ form_values.background_color }}"
+                       class="h-11 w-full rounded-lg border border-stone-300 bg-white p-1">
+                {% if errors.background_color %}<p class="mt-1 text-xs text-red-600">{{ errors.background_color }}</p>{% endif %}
+            </div>
+            <div>
+                <label for="studio-text-color" class="block text-sm font-semibold text-stone-700 mb-1.5">Text color</label>
+                <input id="studio-text-color" type="color" name="text_color" x-ref="textColorInput" x-model="textColor"
+                       value="{{ form_values.text_color }}"
+                       class="h-11 w-full rounded-lg border border-stone-300 bg-white p-1">
+                {% if errors.text_color %}<p class="mt-1 text-xs text-red-600">{{ errors.text_color }}</p>{% endif %}
+            </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-stone-100 pt-4">
+            <p class="text-xs text-stone-500">Saving creates an editable starter layout, not a published post or rendered image.</p>
+            <button type="submit" class="px-5 py-2.5 rounded-lg bg-violet-700 text-white text-sm font-semibold hover:bg-violet-800">
+                {% if template %}Save changes{% else %}Save template{% endif %}
+            </button>
+        </div>
+    </form>
+
+    <aside class="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h2 class="text-base font-semibold text-stone-900">Live preview</h2>
+                <p class="text-xs text-stone-500 mt-1"><span x-text="formatWidth()"></span> × <span x-text="formatHeight()"></span> px</p>
+            </div>
+            <span class="text-[11px] font-medium text-stone-500 rounded-full bg-stone-100 px-2.5 py-1">Preview only</span>
+        </div>
+        <div class="mx-auto overflow-hidden rounded-xl shadow-lg relative flex flex-col justify-end p-6 sm:p-8"
+             :style="'width:min(100%, 360px);aspect-ratio:' + formatWidth() + '/' + formatHeight() + ';background-color:' + backgroundColor + ';color:' + textColor">
+            <img x-show="selectedImageUrl" x-cloak :src="selectedImageUrl" alt="" class="absolute inset-0 w-full h-full object-cover opacity-35">
+            <div class="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent"></div>
+            <div class="relative z-10">
+                <p class="uppercase tracking-[0.18em] text-[10px] font-bold opacity-80 mb-2">Your brand</p>
+                <h3 class="font-bold text-2xl leading-tight break-words" x-text="headline || 'Your headline goes here'"></h3>
+                <p class="mt-3 text-sm leading-relaxed whitespace-pre-line break-words" x-text="body || 'Add supporting copy to complete your design.'"></p>
+                <span x-show="cta" class="inline-flex mt-5 px-4 py-2 rounded-full bg-white/95 text-stone-900 text-xs font-bold" x-text="cta"></span>
+            </div>
+        </div>
+        <p class="mt-4 text-xs text-stone-500 text-center">Preview scales to fit. Exact rendering and ad-safe-area checks are not included.</p>
+    </aside>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ request.csp_nonce }}">
+function studioEditor() {
+    return {
+        format: '{{ form_values.format|escapejs }}',
+        headline: '',
+        body: '',
+        cta: '',
+        backgroundColor: '#6d28d9',
+        textColor: '#ffffff',
+        selectedImageUrl: '',
+        init() {
+            this.headline = this.$refs.headlineInput.value || '';
+            this.body = this.$refs.bodyInput.value || '';
+            this.cta = this.$refs.ctaInput.value || '';
+            this.backgroundColor = this.$refs.backgroundInput.value || '#6d28d9';
+            this.textColor = this.$refs.textColorInput.value || '#ffffff';
+            this.selectedImageUrl = this.$refs.assetSelect.selectedOptions[0]?.dataset.url || '';
+        },
+        formatWidth() {
+            return this.$refs.formatSelect.selectedOptions[0]?.dataset.width || 1080;
+        },
+        formatHeight() {
+            return this.$refs.formatSelect.selectedOptions[0]?.dataset.height || 1080;
+        }
+    };
+}
+</script>
+{% endblock %}

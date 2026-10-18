@@ -17,7 +17,44 @@
     box-shadow: 0 0 0 3px rgba(123, 47, 247, 0.35);
   }
 </style>
-<div class="w-full max-w-md px-4">
+<div class="auth-stage">
+    <section class="auth-story" aria-label="DigiSocials workspace">
+        <div class="auth-story-brand">
+            <img src="{% static 'branding/digitech-group-logo.jpeg' %}" alt="" class="auth-story-logo">
+            <span>DigiSocials <span>Studio</span></span>
+        </div>
+        <div class="auth-story-copy">
+            <span class="auth-eyebrow"><span></span> Your social workspace</span>
+            <h2>Make room for<br><em>good ideas.</em></h2>
+            <p>Plan your content, keep every channel moving, and bring your team into one clear workflow.</p>
+        </div>
+        <div class="auth-story-preview" aria-hidden="true">
+            <div class="auth-preview-top">
+                <div>
+                    <span class="auth-preview-label">WEEKLY OVERVIEW</span>
+                    <strong>Your publishing rhythm</strong>
+                </div>
+                <span class="auth-preview-month">THIS WEEK <b>⌄</b></span>
+            </div>
+            <div class="auth-preview-days">
+                <div><span>MON</span><b>12</b><i></i></div>
+                <div><span>TUE</span><b>13</b><i></i><i></i></div>
+                <div class="is-today"><span>WED</span><b>14</b><i></i></div>
+                <div><span>THU</span><b>15</b><i></i><i></i></div>
+                <div><span>FRI</span><b>16</b></div>
+                <div><span>SAT</span><b>17</b><i></i></div>
+                <div><span>SUN</span><b>18</b></div>
+            </div>
+            <div class="auth-preview-footer">
+                <span><i class="preview-dot preview-dot-purple"></i> Instagram</span>
+                <span><i class="preview-dot preview-dot-blue"></i> Facebook</span>
+                <span class="auth-preview-open">Open calendar <b>↗</b></span>
+            </div>
+        </div>
+        <div class="auth-story-foot"><span>One workspace, more momentum.</span><span>BUILT FOR TEAMS</span></div>
+    </section>
+    <div class="auth-panel">
+    <div class="w-full max-w-md px-4 auth-form-wrap">
     <!-- Logo & Header -->
     <div class="text-center mb-8">
         <div class="inline-flex items-center justify-center w-12 h-12 mb-4">
@@ -126,5 +163,7 @@
         <a href="{{ signup_url }}" class="font-semibold hover:underline" style="color: var(--primary);">Sign up</a>
     </p>
     {% endif %}
+</div>
+    </div>
 </div>
 {% endblock %}

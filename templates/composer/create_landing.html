@@ -395,16 +395,31 @@
      @use-builtin-template.window="openTemplate($event.detail.id)">
 
     <!-- Page header -->
-    <div class="w-full min-h-[60px] inline-flex flex-row justify-between items-center px-6 pt-6 pb-0 mb-6">
+    <div class="w-full min-h-[60px] flex flex-wrap gap-3 justify-between items-center px-6 pt-6 pb-0 mb-6">
         <h1 class="text-2xl font-semibold text-stone-900" style="letter-spacing: -0.01em;">Create</h1>
 
-        <!-- + New Idea -->
-        <button x-show="activeTab === 'ideas'" x-cloak
-                @click="showCreateModal = true; createSelectedGroup = _defaultGroupId"
-                class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-semibold text-violet-600 bg-violet-50 border border-violet-200 rounded-full hover:bg-violet-100 hover:border-violet-300 active:bg-violet-100 transition-all duration-150 cursor-pointer">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            New Idea
-        </button>        
+        <div class="flex flex-wrap items-center gap-2">
+            <a href="{% url 'media_library:index' workspace_id=workspace.id %}"
+               class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-200 rounded-full hover:bg-stone-50">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.8"/><circle cx="8.5" cy="8.5" r="1.5" stroke-width="1.8"/><path stroke-width="1.8" d="m21 15-5-5L5 21"/></svg>
+                Gallery
+            </a>
+            <a href="{% url 'composer:studio_template' workspace_id=workspace.id %}"
+               class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-full hover:bg-violet-100">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 20h16M5 16l8-11 5 5-8 11H5v-5z"/></svg>
+                Studio
+            </a>
+            <a href="{% url 'composer:template_list' workspace_id=workspace.id %}"
+               class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-200 rounded-full hover:bg-stone-50">
+                Saved templates
+            </a>
+            <button x-show="activeTab === 'ideas'" x-cloak
+                    @click="showCreateModal = true; createSelectedGroup = _defaultGroupId"
+                    class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-violet-700 border border-violet-700 rounded-full hover:bg-violet-800 transition-colors cursor-pointer">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                New idea
+            </button>
+        </div>
     </div>
 
     <!-- Toolbar -->
@@ -423,6 +438,10 @@
             <button @click="activeTab = 'feeds'"
                     class="create-tab" :class="activeTab === 'feeds' && 'active'">
                 Feeds
+            </button>
+            <button @click="activeTab = 'ai'"
+                    class="create-tab" :class="activeTab === 'ai' && 'active'">
+                AI Ideas
             </button>
         </div>
 
@@ -509,6 +528,79 @@
 
     <!-- Tab content -->
     <div class="p-6">
+        <!-- AI-assisted brainstorming -->
+        <section x-show="activeTab === 'ai'" x-cloak class="max-w-5xl mx-auto">
+            <div class="grid grid-cols-1 lg:grid-cols-[minmax(240px,0.8fr)_minmax(0,1.2fr)] gap-8">
+                <div>
+                    <h2 class="text-xl font-semibold text-stone-900">Start with a topic. Shape the idea.</h2>
+                    <p class="mt-2 text-sm leading-6 text-stone-600">Get editable post angles for your audience. Review every suggestion before adding it to your board.</p>
+                    <form class="mt-6 space-y-4" @submit.prevent="generateIdeas()">
+                        {% csrf_token %}
+                        <div>
+                            <label for="ai-topic" class="block text-sm font-semibold text-stone-700 mb-1.5">What do you want to post about?</label>
+                            <input id="ai-topic" type="text" maxlength="200" required x-model="aiTopic"
+                                   class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                                   placeholder="e.g. sustainable skincare">
+                        </div>
+                        <div>
+                            <label for="ai-audience" class="block text-sm font-semibold text-stone-700 mb-1.5">Who is it for? <span class="font-normal text-stone-400">optional</span></label>
+                            <input id="ai-audience" type="text" maxlength="200" x-model="aiAudience"
+                                   class="w-full rounded-lg border border-stone-300 px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+                                   placeholder="e.g. first-time founders">
+                        </div>
+                        <div>
+                            <label for="ai-platform" class="block text-sm font-semibold text-stone-700 mb-1.5">Platform <span class="font-normal text-stone-400">optional</span></label>
+                            <select id="ai-platform" x-model="aiPlatform"
+                                    class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100">
+                                <option value="">Any platform</option>
+                                <option>Instagram</option><option>Facebook</option><option>LinkedIn</option>
+                                <option>TikTok</option><option>YouTube</option><option>Pinterest</option>
+                                <option>Threads</option><option>Bluesky</option>
+                            </select>
+                        </div>
+                        <button type="submit" :disabled="aiLoading"
+                                class="inline-flex items-center justify-center gap-2 rounded-lg bg-violet-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-60 disabled:cursor-wait">
+                            <svg x-show="!aiLoading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 3v3m0 12v3m9-9h-3M6 12H3m15.36-6.36-2.12 2.12M7.76 16.24l-2.12 2.12m12.72 0-2.12-2.12M7.76 7.76 5.64 5.64"/><path stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M15.5 12a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z"/></svg>
+                            <span x-show="!aiLoading">Get ideas</span>
+                            <span x-show="aiLoading" x-cloak>Thinking…</span>
+                        </button>
+                    </form>
+                    <p x-show="aiNotice" x-cloak class="mt-4 rounded-lg bg-blue-50 px-3 py-2.5 text-xs leading-5 text-blue-800" role="status" x-text="aiNotice"></p>
+                    <p x-show="aiError" x-cloak class="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-xs leading-5 text-red-800" role="alert" x-text="aiError"></p>
+                    <p class="mt-5 text-xs leading-5 text-stone-500">AI output can be inaccurate. Check facts and adapt each draft to your voice. Nothing is posted automatically.</p>
+                </div>
+                <div>
+                    <div class="flex items-end justify-between gap-3 border-b border-stone-200 pb-3">
+                        <div>
+                            <h3 class="text-base font-semibold text-stone-900">Your ideas</h3>
+                            <p class="mt-1 text-xs text-stone-500">Choose an idea to add it to the board.</p>
+                        </div>
+                        <span x-show="aiIdeas.length" x-cloak class="text-xs text-stone-500" x-text="aiIdeas.length + ' suggestions'"></span>
+                    </div>
+                    <div x-show="!aiIdeas.length && !aiLoading" class="py-12 text-center text-sm text-stone-500">
+                        Your ideas will appear here.
+                    </div>
+                    <div class="mt-3 space-y-3">
+                        <template x-for="(idea, index) in aiIdeas" :key="index">
+                            <article class="border-b border-stone-100 py-4">
+                                <div class="flex items-start justify-between gap-4">
+                                    <div>
+                                        <h4 class="text-sm font-semibold text-stone-900" x-text="idea.title"></h4>
+                                        <p class="mt-1.5 text-sm leading-6 text-stone-600" x-text="idea.description"></p>
+                                    </div>
+                                    <button type="button" @click="saveAiIdea(idea)" :disabled="savingAiIdea"
+                                            class="flex-shrink-0 rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50">
+                                        <span x-show="!savingAiIdea">Add to board</span>
+                                        <span x-show="savingAiIdea" x-cloak>Saving…</span>
+                                    </button>
+                                </div>
+                            </article>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- Ideas tab -->
         <div x-show="activeTab === 'ideas'">
             <div id="kanban-board">
@@ -1137,6 +1229,14 @@ function kanbanBoard() {
     return {
         activeTab: '{{ tab }}',
         activeTag: '{{ active_tag|default_if_none:""|escapejs }}',
+        aiTopic: '',
+        aiAudience: '',
+        aiPlatform: '',
+        aiIdeas: [],
+        aiLoading: false,
+        aiError: '',
+        aiNotice: '',
+        savingAiIdea: false,
         showCreateModal: false,
         showExploreModal: false,
         createGroupId: '',
@@ -1174,6 +1274,66 @@ function kanbanBoard() {
         // Column ID-to-label map for the dropdown
         _columnMap: { {% for col in columns %}'{{ col.id }}': '{{ col.label }}'{% if not forloop.last %}, {% endif %}{% endfor %} },
         _defaultGroupId: '{% if columns %}{{ columns.0.id }}{% endif %}',
+
+        async generateIdeas() {
+            this.aiLoading = true;
+            this.aiError = '';
+            this.aiNotice = '';
+            this.aiIdeas = [];
+            try {
+                var response = await fetch('{% url "composer:idea_generate" workspace_id=workspace.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': this._getCsrfToken(),
+                    },
+                    body: new URLSearchParams({
+                        topic: this.aiTopic,
+                        audience: this.aiAudience,
+                        platform: this.aiPlatform,
+                    }),
+                });
+                var data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Could not get ideas. Please try again.');
+                this.aiIdeas = data.ideas || [];
+                if (data.source === 'starter-prompts') {
+                    this.aiNotice = 'AI is not configured for this workspace. These are editable prompt starters, not AI-generated ideas.';
+                } else {
+                    this.aiNotice = 'AI suggestions are ready. Review and edit them before use.';
+                }
+            } catch (error) {
+                this.aiError = error.message || 'Could not get ideas. Please try again.';
+            } finally {
+                this.aiLoading = false;
+            }
+        },
+
+        async saveAiIdea(idea) {
+            if (this.savingAiIdea) return;
+            this.savingAiIdea = true;
+            this.aiError = '';
+            try {
+                var response = await fetch('{% url "composer:idea_create" workspace_id=workspace.id %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': this._getCsrfToken(),
+                    },
+                    body: new URLSearchParams({
+                        title: idea.title,
+                        description: idea.description,
+                        group: this._defaultGroupId,
+                        tags: '',
+                    }),
+                });
+                if (!response.ok) throw new Error((await response.text()) || 'Could not save this idea.');
+                this.aiNotice = 'Idea added to your board. Refreshing…';
+                window.setTimeout(() => window.location.reload(), 350);
+            } catch (error) {
+                this.aiError = error.message || 'Could not save this idea.';
+                this.savingAiIdea = false;
+            }
+        },
 
         // Template data for detail modal
         _templates: {

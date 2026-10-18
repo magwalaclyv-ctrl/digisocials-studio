@@ -26,6 +26,16 @@ TERMS_URL = env("TERMS_URL", default="").strip()
 PRIVACY_URL = env("PRIVACY_URL", default="").strip()
 SUPPORT_EMAIL = env("SUPPORT_EMAIL", default="").strip()
 
+# Optional OpenAI-compatible chat endpoint for post-idea brainstorming. No
+# provider is called unless the operator supplies a key; the Create page has
+# clearly-labelled local prompt starters when it is not configured.
+POST_IDEAS_API_KEY = env("POST_IDEAS_API_KEY", default="").strip()
+POST_IDEAS_API_URL = env(
+    "POST_IDEAS_API_URL",
+    default="https://api.openai.com/v1/chat/completions",
+).strip()
+POST_IDEAS_MODEL = env("POST_IDEAS_MODEL", default="gpt-4o-mini").strip()
+
 # Application definition
 
 DJANGO_APPS = [

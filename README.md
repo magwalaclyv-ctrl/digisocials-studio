@@ -12,6 +12,9 @@ React/Express/Supabase implementation is retained in
   client approvals.
 - A post composer, drafts and ideas, media library, content calendar,
   scheduling queues and publishing history.
+- A gallery for local media uploads, optional AI-assisted idea prompts, and a
+  Studio editor for reusable post, story, reel and ad layouts with common
+  network-size presets.
 - Direct publishing integrations for Facebook, Instagram, LinkedIn, TikTok,
   YouTube, Pinterest, Threads, Bluesky, Google Business Profile, Mastodon and
   DEV.to, plus platform-dependent inbox and analytics integrations.
@@ -24,8 +27,10 @@ React/Express/Supabase implementation is retained in
 Publishing, inbox, and provider analytics use the platforms' official APIs.
 They require your own developer credentials, user authorization, and in some
 cases platform review. The app does not simulate successful publishing or
-analytics. AI/billing intelligence is an optional separate service and is
-disabled until its integration is configured.
+analytics. Post-idea brainstorming can use an optional OpenAI-compatible API;
+without credentials, the Create page clearly labels its local prompt starters.
+AI/billing intelligence is a separate optional service and is disabled until
+its integration is configured.
 
 ## Run locally
 
@@ -184,6 +189,7 @@ values are:
 | `S3_ENDPOINT_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME` | Supabase Storage S3-compatible connection. |
 | `SOURCE_CODE_URL` | Public URL for the corresponding source of this AGPL network service. |
 | `TERMS_URL`, `PRIVACY_URL`, `SUPPORT_EMAIL` | Operator-owned legal and support information. |
+| `POST_IDEAS_API_KEY`, `POST_IDEAS_API_URL`, `POST_IDEAS_MODEL` | Optional OpenAI-compatible provider for Create-page idea generation. |
 
 ## License and provenance
 

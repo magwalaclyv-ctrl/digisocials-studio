@@ -14,6 +14,7 @@ from apps.common.validators import normalize_tags
 from apps.members.decorators import require_org_role, require_permission
 
 from .models import MediaAsset, MediaFolder
+from .quotas import StorageQuotaExceededError
 from .services import (
     ProtectedAssetError,
     create_asset,
@@ -161,6 +162,14 @@ def upload(request, workspace_id):
             # Enqueue background processing
             process_media_asset(str(asset.id))
             results.append({"id": str(asset.id), "status": "ok"})
+        except StorageQuotaExceededError:
+            results.append(
+                {
+                    "filename": uploaded_file.name,
+                    "status": "error",
+                    "errors": ["Organization media storage is full. Remove unused media or contact your administrator."],
+                }
+            )
         except ValidationError as e:
             results.append(
                 {

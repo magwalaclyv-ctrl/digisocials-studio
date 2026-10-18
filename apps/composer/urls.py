@@ -9,6 +9,7 @@ urlpatterns = [
     path("create/", views.create_landing, name="create_landing"),
     # Idea CRUD (HTMX endpoints)
     path("ideas/upload-media/", views.idea_upload_media, name="idea_upload_media"),
+    path("ideas/generate/", views.idea_generate, name="idea_generate"),
     path("ideas/create/", views.idea_create, name="idea_create"),
     path("ideas/<uuid:idea_id>/create-post/", views.idea_create_post, name="idea_create_post"),
     path("ideas/<uuid:idea_id>/edit/", views.idea_edit, name="idea_edit"),
@@ -66,6 +67,12 @@ urlpatterns = [
     path("categories/<uuid:category_id>/edit/", views.category_edit, name="category_edit"),
     path("categories/<uuid:category_id>/delete/", views.category_delete, name="category_delete"),
     # Post Templates
+    path("templates/studio/", views.studio_template, name="studio_template"),
+    path(
+        "templates/studio/<uuid:template_id>/edit/",
+        views.studio_template,
+        name="studio_template_edit",
+    ),
     path("templates/", views.template_list, name="template_list"),
     path("templates/<uuid:template_id>/delete/", views.template_delete, name="template_delete"),
     path("templates/<uuid:template_id>/use/", views.use_template, name="use_template"),
