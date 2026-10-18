@@ -45,6 +45,14 @@ class TestLoginSignupLink:
         assert response.status_code == 200
         assert _signup_href(response) == "/accounts/signup/"
 
+    def test_login_page_includes_accessible_platform_marquee(self, client):
+        response = client.get(reverse("account_login"))
+
+        assert response.status_code == 200
+        assert b'aria-label="Social platforms supported by DigiSocials"' in response.content
+        assert b"Instagram" in response.content
+        assert b"Google Business" in response.content
+
     def test_default_keeps_next_passthrough(self, client):
         response = client.get(reverse("account_login"), {"next": "/foo/"})
 

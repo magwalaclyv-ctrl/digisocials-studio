@@ -132,6 +132,15 @@ class TestExistingUsersAreUnaffected:
         settings.SIGNUP_MODE = "closed"
         assert client.get(reverse("account_login")).status_code == 200
 
+    def test_signup_page_includes_accessible_platform_marquee(self, settings, client):
+        settings.SIGNUP_MODE = "open"
+        response = client.get(reverse("account_signup"))
+
+        assert response.status_code == 200
+        assert b'aria-label="Social platforms supported by DigiSocials"' in response.content
+        assert b"Instagram" in response.content
+        assert b"Google Business" in response.content
+
     def test_existing_user_can_log_in_when_closed(self, settings, client):
         settings.SIGNUP_MODE = "closed"
         User.objects.create_user(email="existing@example.com", password="pw-for-test-only")
